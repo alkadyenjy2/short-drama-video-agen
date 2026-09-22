@@ -1,5 +1,5 @@
 # bot.py - Short Drama Video Agent with Trend Scanner + Edit Understanding
-import asyncio, json, os
+import asyncio, json, os, re, unicodedata
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -56,37 +56,97 @@ def build_application() -> Application:
     return application
 
 
+def normalize_arabic(text: str) -> str:
+    """Normalize common Arabic spelling/diacritics so natural comments match reliably."""
+    text = unicodedata.normalize("NFKC", text or "")
+    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
+    text = text.replace("ـ", "")
+    text = text.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ؤ": "و", "ئ": "ي"}))
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _extract_seconds(text: str):
+    match = re.search(r"(\d+)\s*(?:ثانيه|ثواني|ثانية|ثوان|ث|sec|secs|second|seconds)", text)
+    return int(match.group(1)) if match else None
+
+
+def _extract_caption(text: str):
+    match = re.search(r"(?:الكابشن|كابشن|العنوان|عنوان)\s*(?:لـ|ل|:|=)?\s*(.+)$", text)
+    return match.group(1).strip() if match else None
+
+
 def parse_edit_comment(text: str):
-    """يفهم تعليقاتك بالعربي وينفذها"""
-    text_lower = text.lower()
+    """Convert a natural Arabic edit comment into a structured EDIT_REQUEST.
+
+    Parsing only. This function never edits or regenerates a video.
+    """
+    normalized = normalize_arabic(text)
     actions = []
-    for ar, en in EDIT_KEYWORDS.items():
-        if ar in text_lower:
-            actions.append(en)
+    operations = []
 
-    result = {
+    def add_action(name):
+        if name not in actions:
+            actions.append(name)
+
+    if any(k in normalized for k in ("اضاءة", "اضاء")):
+        add_action("lighting")
+        if any(k in normalized for k in ("اغمق", "غمق", "داكن", "مظلم")):
+            operations.append({"type": "lighting", "value": "darker", "prompt": "dramatic low-key lighting, darker shadows, cinematic"})
+        elif any(k in normalized for k in ("افتح", "فاتح", "اشرق", "ساطع")):
+            operations.append({"type": "lighting", "value": "brighter", "prompt": "brighter, high-key lighting"})
+        else:
+            operations.append({"type": "lighting", "value": "adjust", "prompt": "adjust lighting as requested"})
+
+    seconds = _extract_seconds(normalized)
+    if any(k in normalized for k in ("قص", "اقطع", "شيل")):
+        add_action("trim")
+        operations.append({
+            "type": "trim",
+            "seconds": seconds if seconds is not None else 3,
+            "position": "start",
+            "prompt": f"trim first {seconds if seconds is not None else 3} seconds",
+        })
+
+    caption = _extract_caption(normalized)
+    if caption:
+        add_action("caption")
+        operations.append({"type": "caption", "new_text": caption, "prompt": "replace caption"})
+    elif "كابشن" in normalized or "عنوان" in normalized:
+        add_action("caption")
+        operations.append({"type": "caption", "new_text": None, "prompt": "regenerate caption"})
+
+    if any(k in normalized for k in ("اسرع", "سرع", "تسريع")):
+        add_action("speed")
+        operations.append({"type": "speed", "value": "1.25x"})
+    elif any(k in normalized for k in ("ابطا", "بطء", "بطيء", "تبطيء")):
+        add_action("speed")
+        operations.append({"type": "speed", "value": "0.85x"})
+
+    if "موسيقى" in normalized or "موسيقا" in normalized:
+        add_action("music")
+        operations.append({"type": "music", "value": "change", "prompt": "replace music track"})
+
+    if any(k in normalized for k in ("الوان", "لون", "فلتر")):
+        add_action("visual")
+        operations.append({"type": "visual", "value": "colors_or_filter", "prompt": "adjust colors/filter as requested"})
+
+    if any(k in normalized for k in ("خلفيه", "خلفية")):
+        add_action("background")
+        operations.append({"type": "background", "value": "change", "prompt": "change background"})
+
+    if any(k in normalized for k in ("زوم", "تقريب", "كبر اللقطه", "قرب اللقطه")):
+        add_action("zoom")
+        operations.append({"type": "zoom", "value": "adjust", "prompt": "adjust camera zoom"})
+
+    return {
+        "type": "EDIT_REQUEST",
         "raw": text,
+        "normalized": normalized,
         "actions": actions,
-        "understood": len(actions) > 0,
-        "operations": []
+        "understood": bool(operations),
+        "operations": operations,
+        "execution_state": "BLOCKED_NO_EDIT_ENGINE" if operations else "UNUNDERSTOOD",
     }
-
-    if "اغمق" in text_lower or "اضاءة" in text_lower:
-        result["operations"].append({"type": "lighting", "value": "darker", "prompt": "dramatic low-key lighting, darker shadows, cinematic"})
-    if "افتح" in text_lower:
-        result["operations"].append({"type": "lighting", "value": "brighter", "prompt": "brighter, high-key lighting"})
-    if "قص" in text_lower or "اقطع" in text_lower:
-        import re
-        secs = re.findall(r'(\d+)\s*ث', text_lower)
-        result["operations"].append({"type": "trim", "seconds": secs[0] if secs else "3", "prompt": f"trim first {secs[0] if secs else 3} seconds"})
-    if "كابشن" in text_lower or "عنوان" in text_lower:
-        result["operations"].append({"type": "caption", "new_text": text, "prompt": "regenerate caption"})
-    if "اسرع" in text_lower:
-        result["operations"].append({"type": "speed", "value": "1.25x"})
-    if "ابطأ" in text_lower:
-        result["operations"].append({"type": "speed", "value": "0.85x"})
-
-    return result
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
