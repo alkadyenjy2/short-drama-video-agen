@@ -168,23 +168,58 @@ async def handle_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("❌ القصة غير موجودة.")
         return
 
+    from visual_factory import create_character_bible, generate_video, parse_story_to_beats
+
+    beats = parse_story_to_beats(story)
+    bible = create_character_bible(story)
     await query.edit_message_text(
-        f"⏳ بقطع **{story['title']}** لـ {story['beats']} حلقات 9:16...\n"
-        "⚠️ مولد الفيديو الحقيقي غير موصول بعد؛ لن يتم الادعاء بأن الفيديو اتولد."
+        f"⏳ ببدأ التوليد الحقيقي لـ **{story['title']}** — {len(beats)} حلقات...\n"
+        "Evidence Gate مفعّل: لن يتم اعتبار أي فيديو Generated بدون artifact حقيقي."
     )
 
-    # Generation remains intentionally simulated until visual_factory is connected.
-    await asyncio.sleep(2)
+    generated = blocked = failed = 0
+    for beat in beats:
+        result = await asyncio.to_thread(generate_video, beat, bible)
+        if not result.success:
+            if result.state == "BLOCKED_CREDENTIALS":
+                blocked += 1
+            else:
+                failed += 1
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=(f"🛑 Beat {beat['beat_number']}/{len(beats)}: {result.state}\n"
+                      f"Code: {result.error_code or 'UNKNOWN'}\n"
+                      "لم يتم إنشاء نجاح أو فيديو وهمي."),
+            )
+            continue
+
+        generated += 1
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=(f"🎬 Beat {beat['beat_number']}/{len(beats)} GENERATED\n"
+                  f"Provider: {result.provider}\nModel: {result.model}\n"
+                  f"Artifact bytes: {result.artifact_bytes}\nSHA256: {result.artifact_sha256}\n"
+                  "⏳ لم يتم النشر؛ الـApproval Gate وPublisher منفصلان."),
+        )
+        try:
+            with open(result.artifact_path, "rb") as video_file:
+                await context.bot.send_video(
+                    chat_id=query.message.chat_id,
+                    video=video_file,
+                    caption=f"Preview — Beat {beat['beat_number']}/{len(beats)}",
+                    supports_streaming=True,
+                )
+        except Exception as exc:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"⚠️ Artifact generated and verified, لكن إرسال الـpreview إلى Telegram فشل: {exc}",
+            )
 
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text=(
-            "🛑 **Generation blocked: no real video provider is connected.**\n\n"
-            "لم يتم إنشاء أو نشر أي فيديو، ولن يتم إنشاء PUBLISHED/نجاح وهمي."
-        ),
-        parse_mode="Markdown"
+        text=(f"📊 Generation result: {generated} generated / {blocked} blocked / {failed} failed.\n"
+              "لا يوجد PUBLISHED أو نجاح نشر من خطوة التوليد."),
     )
-
 
 async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
