@@ -35,11 +35,21 @@ def build_application() -> Application:
     application = Application.builder().token(get_bot_token()).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("research", research_command))
+    application.add_handler(CommandHandler("trending", trending_command))
+    application.add_handler(CommandHandler("earnings", earnings_command))
+    application.add_handler(CommandHandler("save", save_command))
+    application.add_handler(CommandHandler("analyze", analyze_command))
+    application.add_handler(CommandHandler("execute", execute_command))
     application.add_handler(CallbackQueryHandler(show_trending, pattern=r"^show_trending$"))
     application.add_handler(CallbackQueryHandler(handle_selection, pattern=r"^select_"))
     application.add_handler(CallbackQueryHandler(handle_generate, pattern=r"^generate_"))
     application.add_handler(CallbackQueryHandler(start_from_callback, pattern=r"^back_home$"))
-    application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(send_story|my_earnings|edit_story)$"))
+    application.add_handler(CallbackQueryHandler(handle_send_story, pattern=r"^send_story$"))
+    application.add_handler(CallbackQueryHandler(earnings_callback, pattern=r"^my_earnings$"))
+    application.add_handler(CallbackQueryHandler(handle_edit_story, pattern=r"^edit_story$"))
     application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(approve_beat_|edit_beat_|reject_beat_)"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
 
@@ -78,6 +88,111 @@ def parse_edit_comment(text: str):
 
     return result
 
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🧭 **الأوامر المتاحة**\\n\\n"
+        "/start — الصفحة الرئيسية\\n"
+        "/trending — القصص التريند\\n"
+        "/research <كلمة> — بحث داخل قاعدة القصص الحالية\\n"
+        "/save <فكرة> — حفظ فكرة محلياً\\n"
+        "/analyze — تحليل القصة المختارة\\n"
+        "/earnings — لوحة الأرباح المسجلة فعلياً\\n"
+        "/status — حالة مكونات النظام\\n"
+        "/execute — حالة التنفيذ الحقيقي\\n"
+        "/help — المساعدة",
+        parse_mode="Markdown"
+    )
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from auth_manager import get_all_auth_status
+    auth = get_all_auth_status()
+    try:
+        from visual_factory import _provider_status
+        generation = _provider_status()
+    except Exception as exc:
+        generation = {"state": "FAILED", "error": str(exc)}
+    connected = ", ".join(f"{p}: {"CONNECTED" if v["connected"] else "NOT_CONNECTED"}" for p, v in auth.items())
+    await update.message.reply_text(
+        "🟢 **System status**\\n\\n"
+        "Telegram runtime: ACTIVE\\n"
+        f"Video generation: {generation.get("state")}\\n"
+        f"Publisher auth: {connected}\\n"
+        "Evidence Gate: ENFORCED\\n"
+        "Fake PUBLISHED: BLOCKED",
+        parse_mode="Markdown"
+    )
+
+async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args).strip().lower()
+    if not query:
+        await update.message.reply_text("🔎 استخدم: /research <كلمة أو نوع قصة>")
+        return
+    matches = []
+    for story in TRENDING:
+        haystack = " ".join([str(story.get("title", "")), str(story.get("genre", "")), str(story.get("hook", "")), " ".join(map(str, story.get("tags", []))) ]).lower()
+        if query in haystack:
+            matches.append(story)
+    if not matches:
+        await update.message.reply_text(f"🔎 لم أجد تطابقاً في قاعدة القصص المحلية الحالية لـ: {query}\\nهذا الأمر لا يدّعي بحثاً على الويب؛ محرك web research الخارجي غير موصول في هذا runtime.")
+        return
+    lines = [f"🔎 نتائج البحث: {query}"]
+    for i, story in enumerate(matches[:5], 1):
+        lines.append(f"{i}. {story.get("title")}\\nGenre: {story.get("genre")} | Score: {story.get("profit_score")}/10\\nViews: {story.get("views_estimate")}\\nHook: {story.get("hook")}")
+    await update.message.reply_text("\\n\\n".join(lines))
+
+async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔥 استخدم زر **الأكثر ربحاً الآن** من /start لفتح قائمة القصص واختيار قصة.", parse_mode="Markdown")
+
+async def earnings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from analytics_tracker import get_analytics_dashboard
+    dashboard = get_analytics_dashboard()
+    await update.message.reply_text(
+        f"📊 **الأرباح المسجلة فعلياً**\\n\\nVideos: {dashboard["total_videos"]}\\nViews: {dashboard["total_views"]}\\nDownloads: {dashboard["total_downloads"]}\\nEstimated earnings: ${dashboard["total_earnings"]:.2f}\\n\\n⚠️ الأرقام من سجل النظام فقط، وليست إثباتاً لمدفوعات من المنصات.",
+        parse_mode="Markdown"
+    )
+
+async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    idea = " ".join(context.args).strip()
+    if not idea:
+        await update.message.reply_text("💾 استخدم: /save <الفكرة>")
+        return
+    path = "saved_ideas.json"
+    data = []
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f: data = json.load(f)
+        except Exception: data = []
+    from datetime import datetime
+    data.append({"idea": idea, "saved_at": datetime.utcnow().isoformat() + "Z"})
+    with open(path, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
+    await update.message.reply_text("✅ الفكرة اتحفظت محلياً. لم يتم الادعاء بحفظها في خدمة خارجية.")
+
+async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    story = context.user_data.get("selected_story")
+    if not story:
+        await update.message.reply_text("🧠 اختار قصة أولاً من 🔥 الأكثر ربحاً الآن.")
+        return
+    await update.message.reply_text(f"🧠 **تحليل القصة**\\n\\nTitle: {story.get("title")}\\nGenre: {story.get("genre")}\\nBeats: {story.get("beats")}\\nProfit score: {story.get("profit_score")}/10\\nViews estimate: {story.get("views_estimate")}\\nRights: {story.get("rights_compliant")}\\n\\nالتحليل مبني على البيانات الموجودة في trending_stories.json.", parse_mode="Markdown")
+
+async def execute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⚙️ **Execution status**\\n\\nGeneration: موصول بمحرك Hugging Face ويتطلب HF_TOKEN صالحاً.\\nPublishing: موصول بالكود مع Evidence Gate، لكن حسابات المنصات غير متصلة.\\nEditing: parser موصول، محرك إعادة التوليد/التعديل غير موصول.\\nلا يوجد تنفيذ وهمي أو PUBLISHED وهمي.", parse_mode="Markdown")
+
+async def handle_send_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query; await query.answer()
+    context.user_data["awaiting_story"] = True
+    await query.message.reply_text("📝 ابعت ملخص القصة أو النص هنا في رسالة واحدة.\\nهسجله كـ story input؛ لن أدّعي تحليل رابط/فيديو لم أستطع الوصول إليه.")
+
+async def earnings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query; await query.answer()
+    from analytics_tracker import get_analytics_dashboard
+    dashboard = get_analytics_dashboard()
+    await query.message.reply_text(f"📊 Videos: {dashboard["total_videos"]} | Views: {dashboard["total_views"]} | Downloads: {dashboard["total_downloads"]} | Estimated: ${dashboard["total_earnings"]:.2f}\\nالأرقام من سجل النظام فقط، وليست إثبات دفع من منصة.")
+
+async def handle_edit_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query; await query.answer()
+    context.user_data["awaiting_story_edit"] = True
+    await query.message.reply_text("📝 ابعت التعديل المطلوب على القصة. هسجله كطلب تعديل بدون ادعاء تنفيذ قبل وجود محرك تعديل حقيقي.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -223,6 +338,14 @@ async def handle_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    if context.user_data.pop("awaiting_story", False):
+        context.user_data["story_input"] = text
+        await update.message.reply_text("✅ استلمت القصة. تم حفظ الإدخال داخل جلسة Telegram؛ لا يوجد ادعاء بتحليل أو توليد قبل تشغيل المحرك المناسب.")
+        return
+    if context.user_data.pop("awaiting_story_edit", False):
+        context.user_data["story_edit_request"] = text
+        await update.message.reply_text("✅ استلمت تعديل القصة وسجلته كطلب تعديل. التنفيذ الحقيقي يحتاج محرك إعادة توليد/تحرير متصل.")
+        return
     parsed = parse_edit_comment(text)
 
     if not parsed["understood"]:
