@@ -25,6 +25,19 @@ EDIT_KEYWORDS = {
 def get_bot_token() -> str:
     """Return BOT_TOKEN or fail fast before the Telegram runtime starts."""
     token = os.getenv("BOT_TOKEN", "").strip()
+    
+    # Debug logging
+    print(f"[DEBUG] BOT_TOKEN env var check:", flush=True)
+    print(f"[DEBUG] BOT_TOKEN value exists: {bool(token)}", flush=True)
+    print(f"[DEBUG] BOT_TOKEN length: {len(token) if token else 0}", flush=True)
+    
+    # Print first 10 chars for debugging (safe)
+    if token:
+        print(f"[DEBUG] BOT_TOKEN starts with: {token[:10]}...", flush=True)
+    
+    # List all env vars for debugging (be careful with secrets!)
+    print(f"[DEBUG] All available env vars: {list(os.environ.keys())}", flush=True)
+    
     if not token:
         raise RuntimeError("BOT_TOKEN is missing; Telegram runtime cannot start")
     return token
@@ -241,3 +254,4 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"🧩 **فهمت تعليقك:**\n{ops_text}\n\n"
         "⚠️ محرّك التعديل الحقيقي غير موصول بعد. لم يتم الادعاء بتنفيذ التعديل."
     )
+
