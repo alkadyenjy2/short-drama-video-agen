@@ -112,7 +112,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         generation = _provider_status()
     except Exception as exc:
         generation = {"state": "FAILED", "error": str(exc)}
-    connected = ", ".join(f"{p}: {"CONNECTED" if v["connected"] else "NOT_CONNECTED"}" for p, v in auth.items())
+    connected = ", ".join("{}: {}".format(p, "CONNECTED" if v["connected"] else "NOT_CONNECTED") for p, v in auth.items())
     await update.message.reply_text(
         "🟢 **System status**\\n\\n"
         "Telegram runtime: ACTIVE\\n"
