@@ -116,7 +116,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🟢 **System status**\\n\\n"
         "Telegram runtime: ACTIVE\\n"
-        f"Video generation: {generation.get("state")}\\n"
+        f"Video generation: {generation.get('state')}\\n"
         f"Publisher auth: {connected}\\n"
         "Evidence Gate: ENFORCED\\n"
         "Fake PUBLISHED: BLOCKED",
@@ -138,7 +138,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lines = [f"🔎 نتائج البحث: {query}"]
     for i, story in enumerate(matches[:5], 1):
-        lines.append(f"{i}. {story.get("title")}\\nGenre: {story.get("genre")} | Score: {story.get("profit_score")}/10\\nViews: {story.get("views_estimate")}\\nHook: {story.get("hook")}")
+        lines.append(f"{i}. {story.get('title')}\\nGenre: {story.get('genre')} | Score: {story.get('profit_score')}/10\\nViews: {story.get('views_estimate')}\\nHook: {story.get('hook')}")
     await update.message.reply_text("\\n\\n".join(lines))
 
 async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,7 +148,7 @@ async def earnings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from analytics_tracker import get_analytics_dashboard
     dashboard = get_analytics_dashboard()
     await update.message.reply_text(
-        f"📊 **الأرباح المسجلة فعلياً**\\n\\nVideos: {dashboard["total_videos"]}\\nViews: {dashboard["total_views"]}\\nDownloads: {dashboard["total_downloads"]}\\nEstimated earnings: ${dashboard["total_earnings"]:.2f}\\n\\n⚠️ الأرقام من سجل النظام فقط، وليست إثباتاً لمدفوعات من المنصات.",
+        "📊 **الأرباح المسجلة فعلياً**\\n\\nVideos: {}\\nViews: {}\\nDownloads: {}\\nEstimated earnings: ${:.2f}\\n\\n⚠️ الأرقام من سجل النظام فقط، وليست إثباتاً لمدفوعات من المنصات.".format(dashboard["total_videos"], dashboard["total_views"], dashboard["total_downloads"], dashboard["total_earnings"]),
         parse_mode="Markdown"
     )
 
@@ -173,7 +173,7 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not story:
         await update.message.reply_text("🧠 اختار قصة أولاً من 🔥 الأكثر ربحاً الآن.")
         return
-    await update.message.reply_text(f"🧠 **تحليل القصة**\\n\\nTitle: {story.get("title")}\\nGenre: {story.get("genre")}\\nBeats: {story.get("beats")}\\nProfit score: {story.get("profit_score")}/10\\nViews estimate: {story.get("views_estimate")}\\nRights: {story.get("rights_compliant")}\\n\\nالتحليل مبني على البيانات الموجودة في trending_stories.json.", parse_mode="Markdown")
+    await update.message.reply_text("🧠 **تحليل القصة**\\n\\nTitle: {}\\nGenre: {}\\nBeats: {}\\nProfit score: {}/10\\nViews estimate: {}\\nRights: {}\\n\\nالتحليل مبني على البيانات الموجودة في trending_stories.json.".format(story.get("title"), story.get("genre"), story.get("beats"), story.get("profit_score"), story.get("views_estimate"), story.get("rights_compliant")), parse_mode="Markdown")
 
 async def execute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚙️ **Execution status**\\n\\nGeneration: موصول بمحرك Hugging Face ويتطلب HF_TOKEN صالحاً.\\nPublishing: موصول بالكود مع Evidence Gate، لكن حسابات المنصات غير متصلة.\\nEditing: parser موصول، محرك إعادة التوليد/التعديل غير موصول.\\nلا يوجد تنفيذ وهمي أو PUBLISHED وهمي.", parse_mode="Markdown")
@@ -187,7 +187,7 @@ async def earnings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; await query.answer()
     from analytics_tracker import get_analytics_dashboard
     dashboard = get_analytics_dashboard()
-    await query.message.reply_text(f"📊 Videos: {dashboard["total_videos"]} | Views: {dashboard["total_views"]} | Downloads: {dashboard["total_downloads"]} | Estimated: ${dashboard["total_earnings"]:.2f}\\nالأرقام من سجل النظام فقط، وليست إثبات دفع من منصة.")
+    await query.message.reply_text("📊 Videos: {} | Views: {} | Downloads: {} | Estimated: ${:.2f}\\nالأرقام من سجل النظام فقط، وليست إثبات دفع من منصة.".format(dashboard["total_videos"], dashboard["total_views"], dashboard["total_downloads"], dashboard["total_earnings"]))
 
 async def handle_edit_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; await query.answer()
