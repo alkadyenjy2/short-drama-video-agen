@@ -1,0 +1,17 @@
+# railway.toml - Minimal config for Video Agent v1.2
+# Uses existing Dockerfile as runtime authority
+# Do not create conflicting Procfile
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Health check for Railway
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "onFailure"
+restartPolicyMaxRetries = 10
+
+# Railway provides PORT automatically - main.py uses os.getenv("PORT")
+# No startCommand needed - Dockerfile CMD handles it
