@@ -95,9 +95,7 @@ async def main():
             raise RuntimeError("Telegram updater is unavailable")
 
         await application.start()
-        await application.updater.start_polling(
-            allowed_updates=Update.ALL_TYPES if False else None
-        )
+        await application.updater.start_polling()
 
         print("=== Video Agent v1.2 Ready ===")
         print("Telegram: polling ACTIVE")
