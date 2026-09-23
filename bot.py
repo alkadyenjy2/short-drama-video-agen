@@ -1,5 +1,5 @@
 # bot.py - Short Drama Video Agent with Trend Scanner + Edit Understanding
-import asyncio, json, os, re, unicodedata
+import asyncio, hashlib, json, os, re, unicodedata
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -51,7 +51,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(earnings_callback, pattern=r"^my_earnings$"))
     application.add_handler(CallbackQueryHandler(handle_edit_story, pattern=r"^edit_story$"))
     application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(approve_beat_|edit_beat_|reject_beat_)"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
+    application.add_handler(MessageHandler(filters.VIDEO, handle_video_upload))\n    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
 
     return application
 
@@ -396,6 +396,25 @@ async def handle_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
               "لا يوجد PUBLISHED أو نجاح نشر من خطوة التوليد."),
     )
 
+async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message or not message.video:
+        return
+    video = await message.video.get_file()
+    upload_dir = os.getenv("VIDEO_UPLOAD_DIR", "./data/uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, f"{message.video.file_unique_id}.mp4")
+    await video.download_to_drive(path)
+    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    size = os.path.getsize(path)
+    context.user_data["active_video"] = path
+    context.user_data["active_video_sha256"] = digest
+    context.user_data["active_video_bytes"] = size
+    await message.reply_text(
+        f"🎬 الفيديو اتسجل كـ active video.\\nBytes: {size}\\nSHA256: {digest}\\n\\n"
+        "ابعت التعديل المطلوب، مثل: خلي الإضاءة أغمق"
+    )
+
 async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if context.user_data.pop("awaiting_story", False):
@@ -404,23 +423,74 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     if context.user_data.pop("awaiting_story_edit", False):
         context.user_data["story_edit_request"] = text
-        await update.message.reply_text("✅ استلمت تعديل القصة وسجلته كطلب تعديل. التنفيذ الحقيقي يحتاج محرك إعادة توليد/تحرير متصل.")
+        await update.message.reply_text("📝 تم تسجيل تعديل القصة. لم يتم ادعاء إعادة توليد بدون محرك التوليد.")
         return
-    parsed = parse_edit_comment(text)
 
+    parsed = parse_edit_comment(text)
     if not parsed["understood"]:
         await update.message.reply_text(
-            "🤔 مفهمتش التعليق، جرب تقول:\n"
-            "• خلي الإضاءة أغمق / افتح الإضاءة\n"
-            "• قص أول 3 ثواني\n"
-            "• غير الكابشن لـ ...\n"
-            "• اسرع الفيديو / ابطأ\n"
-            "• غير الموسيقى / الألوان"
+            "🤔 مفهمتش التعليق، جرب: خلي الإضاءة أغمق / قص أول 3 ثواني / غير الكابشن / اسرع الفيديو"
         )
         return
 
-    ops_text = "\n".join([f"• {op['type']}: {op.get('value', op.get('prompt', ''))}" for op in parsed["operations"]])
-    await update.message.reply_text(
-        f"🧩 **فهمت تعليقك:**\n{ops_text}\n\n"
-        "⚠️ محرّك التعديل الحقيقي غير موصول بعد. لم يتم الادعاء بتنفيذ التعديل."
+    active_video = context.user_data.get("active_video")
+    if not active_video or not os.path.isfile(active_video):
+        await update.message.reply_text(
+            "🛑 EDIT_REQUEST مفهوم، لكن لا يوجد active video للتنفيذ. ابعت الفيديو أولاً."
+        )
+        return
+
+    from video_editor import edit_video
+    from persistence.repository import get_repository
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    last_result = None
+    for operation in parsed["operations"]:
+        output_dir = os.getenv("VIDEO_OUTPUT_DIR", "./data/edited")
+        os.makedirs(output_dir, exist_ok=True)
+        output = os.path.join(output_dir, f"{uuid4().hex}.mp4")
+        result = await asyncio.to_thread(edit_video, active_video, operation, output)
+        last_result = result
+        if not result.success:
+            await update.message.reply_text(
+                f"🛑 التعديل فشل.\\nState: {result.state}\\nCode: {result.error_code or 'UNKNOWN'}\\n"
+                "لم يتم تسجيل نجاح وهمي."
+            )
+            return
+
+        parent_version = context.user_data.get("active_video_sha256")
+        new_version = result.artifact_sha256
+        try:
+            repo = get_repository()
+            repo.init_schema()
+            video_id = context.user_data.get("active_video_id", update.effective_user.id if update.effective_user else "telegram")
+            repo.create_or_update_video_version(str(video_id), new_version)
+            repo.create_operation_log({
+                "operation_id": uuid4().hex,
+                "user_id": str(update.effective_user.id if update.effective_user else "telegram"),
+                "video_id": str(video_id),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "parent_version": parent_version,
+                "new_version": new_version,
+                "operation_type": operation.get("type", "edit"),
+                "parsed_value": json.dumps(operation, ensure_ascii=False),
+                "generated_prompt": operation.get("prompt"),
+                "preview_reference": result.output_path,
+                "status": "EDITED",
+            })
+        except Exception as exc:
+            await update.message.reply_text(f"🛑 Artifact موجود لكن persistence verification failed: {exc}")
+            return
+
+        context.user_data["active_video"] = result.output_path
+        context.user_data["active_video_sha256"] = result.artifact_sha256
+        context.user_data["active_video_bytes"] = result.artifact_bytes
+
+    await update.message.reply_video(
+        video=open(last_result.output_path, "rb"),
+        caption=(
+            f"✅ EDITED\\nOperation: {last_result.operation}\\n"
+            f"Bytes: {last_result.artifact_bytes}\\nSHA256: {last_result.artifact_sha256}"
+        ),
     )

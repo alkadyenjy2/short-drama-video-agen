@@ -4,7 +4,7 @@
 import os
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
+import threading\n\nfrom video_editor import editor_status
 
 class HealthHandler(BaseHTTPRequestHandler):
     def __init__(self, repository_getter, *args, **kwargs):
@@ -15,7 +15,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             try:
                 repo = self.repository_getter()
-                healthy = repo.health_check() if repo else False
+                healthy = bool(repo and repo.health_check() and editor_status().get("ready"))
                 if healthy:
                     self.send_response(200)
                     self.send_header("Content-type", "application/json")
@@ -24,7 +24,7 @@ class HealthHandler(BaseHTTPRequestHandler):
                         "status": "ok",
                         "service": "video-agent",
                         "persistence": "ok",
-                        "version": "v1.2"
+                        "version": "v1.3",\n                        "video_editor": editor_status()
                     }
                     self.wfile.write(json.dumps(response).encode())
                 else:
