@@ -4,7 +4,9 @@
 import os
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading\n\nfrom video_editor import editor_status
+import threading
+
+from video_editor import editor_status
 
 class HealthHandler(BaseHTTPRequestHandler):
     def __init__(self, repository_getter, *args, **kwargs):
@@ -24,7 +26,8 @@ class HealthHandler(BaseHTTPRequestHandler):
                         "status": "ok",
                         "service": "video-agent",
                         "persistence": "ok",
-                        "version": "v1.3",\n                        "video_editor": editor_status()
+                        "version": "v1.3",
+                        "video_editor": editor_status()
                     }
                     self.wfile.write(json.dumps(response).encode())
                 else:
