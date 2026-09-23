@@ -1,24 +1,25 @@
-# main.py - Video Agent v1.2 Production entrypoint
-# Combines: persistence init + health server + real Telegram polling
-# No hardcoded secrets, fail-fast on BOT_TOKEN missing
+# main.py - Video Agent production entrypoint
+# Telegram uses webhook transport to avoid getUpdates polling conflicts.
+# No hardcoded secrets; BOT_TOKEN is required.
 
 import os
 import asyncio
 import signal
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from persistence.repository import get_repository
-from health import start_health_server
+from health import start_health_server, webhook_path
 import bot as bot_module
+from telegram import Update
 
 
 async def main():
-    print("=== Video Agent v1.2 Starting ===")
+    print("=== Video Agent Starting (Telegram Webhook) ===")
 
     db_path = os.getenv("DATABASE_PATH", "./data/video_agent.db")
-    print(f"Initializing persistence: {db_path}")
     repo = get_repository(db_path=db_path)
     repo.init_schema()
     if not repo.health_check():
@@ -27,46 +28,64 @@ async def main():
 
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
-    print(f"Starting health server on {host}:{port}")
-    health_server, _health_thread = start_health_server(
-        lambda: repo, host=host, port=port
-    )
-    print(f"Health endpoint: http://{host}:{port}/health")
 
     application = None
     shutdown_started = False
     shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    print("Initializing Telegram bot...")
+    application = bot_module.build_application()
+    token = bot_module.get_bot_token()
+    path = webhook_path(token)
+
+    base_url = (
+        os.getenv("TELEGRAM_WEBHOOK_BASE_URL", "").strip().rstrip("/")
+        or os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+        or ("https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip().rstrip("/"))
+    )
+    if not base_url or base_url == "https://":
+        raise RuntimeError("Public webhook base URL is unavailable")
+
+    telegram_url = f"{base_url}{path}"
+    print("Telegram transport: webhook")
+    print(f"Telegram webhook path: {path}")
+
+    def receive_telegram_update(payload):
+        update = Update.de_json(payload, application.bot)
+        future = asyncio.run_coroutine_threadsafe(
+            application.process_update(update), loop
+        )
+        future.result(timeout=30)
+
+    health_server, _health_thread = start_health_server(
+        lambda: repo,
+        host=host,
+        port=port,
+        telegram_handler=receive_telegram_update,
+        telegram_path=path,
+    )
+    print(f"Health endpoint: http://{host}:{port}/health")
 
     async def shutdown():
         nonlocal shutdown_started
         if shutdown_started:
             return
         shutdown_started = True
-
         print("Shutting down gracefully...")
-
         if application is not None:
-            try:
-                if application.updater is not None:
-                    await application.updater.stop()
-            except Exception as exc:
-                print(f"Telegram updater shutdown warning: {exc}")
-
             try:
                 await application.stop()
             except Exception as exc:
                 print(f"Telegram application stop warning: {exc}")
-
             try:
                 await application.shutdown()
             except Exception as exc:
                 print(f"Telegram application shutdown warning: {exc}")
-
         try:
             health_server.shutdown()
         except Exception as exc:
             print(f"Health server shutdown warning: {exc}")
-
         shutdown_event.set()
 
     def handle_shutdown(signum, _frame):
@@ -76,29 +95,17 @@ async def main():
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    print("Initializing Telegram bot...")
-    try:
-        application = bot_module.build_application()
-    except RuntimeError:
-        health_server.shutdown()
-        raise
-    except Exception:
-        health_server.shutdown()
-        raise
-
-    print("Telegram bot initialized - BOT_TOKEN present")
-
     try:
         await application.initialize()
-
-        if application.updater is None:
-            raise RuntimeError("Telegram updater is unavailable")
-
+        await application.bot.set_webhook(
+            url=telegram_url,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=False,
+        )
         await application.start()
-        await application.updater.start_polling()
 
-        print("=== Video Agent v1.2 Ready ===")
-        print("Telegram: polling ACTIVE")
+        print("=== Video Agent Ready ===")
+        print("Telegram: webhook ACTIVE")
         print("Health: /health")
         print("Persistence: SQLite local")
         print("Publisher: Evidence Gate enforced; provider credentials required")
