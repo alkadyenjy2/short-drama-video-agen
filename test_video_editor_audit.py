@@ -65,7 +65,10 @@ class VideoEditorAudit(unittest.TestCase):
         self.assert_artifact(r); self.assertNotEqual(Path(r.output_path).resolve(), self.source.resolve())
     def test_15_mp4_signature(self):
         r = edit_video(str(self.source), {"type":"lighting","value":"darker"})
-        self.assert_artifact(r); self.assertEqual(Path(r.output_path).read_bytes()[:4], b"\x00\x00\x00\x18")
+        self.assert_artifact(r)
+        header = Path(r.output_path).read_bytes()[:8]
+        self.assertGreaterEqual(int.from_bytes(header[:4], "big"), 8)
+        self.assertEqual(header[4:8], b"ftyp")
     def test_16_caption_font_or_explicit_block(self):
         r = edit_video(str(self.source), {"type":"caption","new_text":"Test caption"})
         self.assertIn(r.state, ("EDITED","BLOCKED_NO_EDIT_ENGINE"))
