@@ -51,7 +51,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(earnings_callback, pattern=r"^my_earnings$"))
     application.add_handler(CallbackQueryHandler(handle_edit_story, pattern=r"^edit_story$"))
     application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(approve_beat_|edit_beat_|reject_beat_)"))
-    application.add_handler(MessageHandler(filters.VIDEO, handle_video_upload))\n    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
+    application.add_handler(MessageHandler(filters.VIDEO, handle_video_upload))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
 
     return application
 
