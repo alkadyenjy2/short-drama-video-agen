@@ -1,118 +1,79 @@
-# health.py - Minimal HTTP health endpoint for Railway + Docker
-# GET /health returns 200 only when app + persistence initialized
+# health.py - Minimal HTTP + Telegram webhook endpoint for Railway
+# GET /health returns 200 when persistence is initialized.
+# POST /telegram/webhook/<token-hash> forwards verified Telegram updates.
 
-import os
+import asyncio
+import hashlib
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from video_editor import editor_status
 
-class HealthHandler(BaseHTTPRequestHandler):
-    def __init__(self, repository_getter, *args, **kwargs):
-        self.repository_getter = repository_getter
-        super().__init__(*args, **kwargs)
-    
-    def do_GET(self):
-        if self.path == "/health":
+def webhook_path(bot_token: str) -> str:
+    digest = hashlib.sha256(bot_token.encode("utf-8")).hexdigest()
+    return f"/telegram/webhook/{digest}"
+
+
+def start_health_server(repository_getter, host="0.0.0.0", port=8000,
+                        telegram_handler=None, telegram_path=None):
+    class CustomHandler(BaseHTTPRequestHandler):
+        def _json(self, status, payload):
+            self.send_response(status)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode())
+
+        def do_GET(self):
+            if self.path != "/health":
+                self.send_response(404)
+                self.end_headers()
+                return
             try:
-                repo = self.repository_getter()
-                healthy = bool(repo and repo.health_check() and editor_status().get("ready"))
+                repo = repository_getter()
+                healthy = bool(repo and repo.health_check())
                 if healthy:
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    response = {
+                    self._json(200, {
                         "status": "ok",
                         "service": "video-agent",
                         "persistence": "ok",
                         "version": "v1.3",
-                        "video_editor": editor_status()
-                    }
-                    self.wfile.write(json.dumps(response).encode())
+                        "telegram_transport": "webhook",
+                    })
                 else:
-                    self.send_response(503)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    response = {
+                    self._json(503, {
                         "status": "error",
                         "service": "video-agent",
                         "persistence": "failed",
-                        "version": "v1.2"
-                    }
-                    self.wfile.write(json.dumps(response).encode())
-            except Exception as e:
-                self.send_response(503)
-                self.send_header("Content-type", "application/json")
-                self.end_headers()
-                response = {
+                    })
+            except Exception:
+                self._json(503, {
                     "status": "error",
                     "service": "video-agent",
                     "persistence": "exception",
-                    "version": "v1.2"
-                }
-                self.wfile.write(json.dumps(response).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        # Suppress default logging
-        return
+                })
 
-def start_health_server(repository_getter, host="0.0.0.0", port=8000):
-    # Factory to inject repository_getter
-    def handler(*args, **kwargs):
-        HealthHandler(repository_getter, *args, **kwargs)
-    
-    # Use closure to pass getter
-    class CustomHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/health":
-                try:
-                    repo = repository_getter()
-                    healthy = repo.health_check() if repo else False
-                    if healthy:
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        response = {
-                            "status": "ok",
-                            "service": "video-agent",
-                            "persistence": "ok",
-                            "version": "v1.2"
-                        }
-                        self.wfile.write(json.dumps(response).encode())
-                    else:
-                        self.send_response(503)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        response = {
-                            "status": "error",
-                            "service": "video-agent",
-                            "persistence": "failed",
-                            "version": "v1.2"
-                        }
-                        self.wfile.write(json.dumps(response).encode())
-                except Exception as e:
-                    self.send_response(503)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    response = {
-                        "status": "error",
-                        "service": "video-agent",
-                        "persistence": "exception",
-                        "version": "v1.2",
-                        "error": "hidden"  # Do not expose internal stack traces
-                    }
-                    self.wfile.write(json.dumps(response).encode())
-            else:
+        def do_POST(self):
+            if not telegram_path or self.path != telegram_path or telegram_handler is None:
                 self.send_response(404)
                 self.end_headers()
-        
+                return
+
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 10 * 1024 * 1024:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                raw = self.rfile.read(length)
+                payload = json.loads(raw.decode("utf-8"))
+                telegram_handler(payload)
+                self._json(200, {"ok": True})
+            except Exception:
+                self._json(400, {"ok": False})
+
         def log_message(self, format, *args):
             return
-    
+
     server = HTTPServer((host, port), CustomHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
