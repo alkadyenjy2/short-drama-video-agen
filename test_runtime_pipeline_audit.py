@@ -41,6 +41,27 @@ class RuntimePipelineAudit(unittest.TestCase):
             repo.init_schema()
             self.assertTrue(repo.health_check())
 
+            repo.enqueue_download_job({
+                "job_id": "audit-job",
+                "user_id": "audit-user",
+                "url": url,
+            })
+            claimed = repo.claim_download_jobs()
+            self.assertEqual(len(claimed), 1)
+            self.assertEqual(claimed[0]["status"], "RUNNING")
+            repo.complete_download_job(
+                "audit-job",
+                {
+                    "status": "COMPLETE",
+                    "video_id": "audit-video",
+                    "title": "Audit video",
+                    "path": str(source),
+                    "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "bytes": source.stat().st_size,
+                },
+            )
+            self.assertEqual(repo.get_download_job("audit-job")["status"], "COMPLETE")
+
             source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
             repo.set_active_video("audit-user", "audit-video", str(source), source_sha, source.stat().st_size)
             active = repo.get_active_video("audit-user")
