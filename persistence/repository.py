@@ -104,6 +104,19 @@ class SQLiteRepository(PersistenceRepository):
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_video_versions_story_id ON video_versions(story_id);")
             
+            # active Telegram video state - survives process restarts because it lives in the persistent DB
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS active_videos (
+                    user_id TEXT PRIMARY KEY,
+                    video_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_active_videos_updated_at ON active_videos(updated_at);")
+            
             # publications table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS publications (
@@ -281,6 +294,32 @@ class SQLiteRepository(PersistenceRepository):
                 result.append(d)
             return result
     
+    def set_active_video(self, user_id: str, video_id: str, path: str, sha256: str, bytes: int) -> Dict:
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("""
+                INSERT INTO active_videos (user_id, video_id, path, sha256, bytes, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(user_id) DO UPDATE SET
+                    video_id = excluded.video_id,
+                    path = excluded.path,
+                    sha256 = excluded.sha256,
+                    bytes = excluded.bytes,
+                    updated_at = datetime('now')
+            """, (str(user_id), str(video_id), path, sha256, int(bytes)))
+            return self.get_active_video(str(user_id))
+
+    def get_active_video(self, user_id: str) -> Optional[Dict]:
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("SELECT * FROM active_videos WHERE user_id = ?", (str(user_id),))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def clear_active_video(self, user_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM active_videos WHERE user_id = ?", (str(user_id),))
+
     def health_check(self) -> bool:
         try:
             with self._lock:
