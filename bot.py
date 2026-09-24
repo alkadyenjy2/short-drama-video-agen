@@ -79,7 +79,7 @@ def _extract_caption(text: str):
 
 def _extract_supported_url(text: str):
     """Return a supported public video URL, or None."""
-    match = re.search(r"https?://\\S+", text or "")
+    match = re.search(r"https?://\S+", text or "")
     if not match:
         return None
     url = match.group(0).rstrip(".,!?)]}")
