@@ -47,6 +47,21 @@ class PersistenceRepository(ABC):
     def list_publications(self, video_id: Optional[str] = None) -> List[Dict]: ...
     
     @abstractmethod
+    def enqueue_download_job(self, job: Dict) -> Dict: ...
+
+    @abstractmethod
+    def claim_download_jobs(self, limit: int = 1) -> List[Dict]: ...
+
+    @abstractmethod
+    def complete_download_job(self, job_id: str, updates: Dict) -> Optional[Dict]: ...
+
+    @abstractmethod
+    def fail_download_job(self, job_id: str, error: str) -> Optional[Dict]: ...
+
+    @abstractmethod
+    def get_download_job(self, job_id: str) -> Optional[Dict]: ...
+
+    @abstractmethod
     def health_check(self) -> bool: ...
 
 # === SQLITE IMPLEMENTATION ===
@@ -117,6 +132,26 @@ class SQLiteRepository(PersistenceRepository):
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_active_videos_updated_at ON active_videos(updated_at);")
             
+            # Desktop browser worker queue - lets a local browser-backed worker handle YouTube anti-bot challenges
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS download_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    video_id TEXT,
+                    title TEXT,
+                    path TEXT,
+                    sha256 TEXT,
+                    bytes INTEGER,
+                    error TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_download_jobs_status ON download_jobs(status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_download_jobs_created_at ON download_jobs(created_at);")
+
             # publications table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS publications (
@@ -294,6 +329,55 @@ class SQLiteRepository(PersistenceRepository):
                 result.append(d)
             return result
     
+    def enqueue_download_job(self, job: Dict) -> Dict:
+        with self._lock:
+            self._conn.execute("""
+                INSERT INTO download_jobs
+                (job_id, user_id, url, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'PENDING', datetime('now'), datetime('now'))
+            """, (str(job["job_id"]), str(job["user_id"]), str(job["url"])))
+            return self.get_download_job(str(job["job_id"]))
+
+    def claim_download_jobs(self, limit: int = 1) -> List[Dict]:
+        claimed = []
+        with self._lock:
+            cur = self._conn.cursor()
+            rows = cur.execute(
+                "SELECT * FROM download_jobs WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT ?",
+                (max(1, min(int(limit), 5)),)
+            ).fetchall()
+            for row in rows:
+                job_id = row["job_id"]
+                cur.execute(
+                    "UPDATE download_jobs SET status = 'RUNNING', updated_at = datetime('now') WHERE job_id = ? AND status = 'PENDING'",
+                    (job_id,)
+                )
+                if cur.rowcount == 1:
+                    claimed.append(dict(cur.execute("SELECT * FROM download_jobs WHERE job_id = ?", (job_id,)).fetchone()))
+        return claimed
+
+    def complete_download_job(self, job_id: str, updates: Dict) -> Optional[Dict]:
+        allowed = {"status", "video_id", "title", "path", "sha256", "bytes", "error"}
+        fields = [(k, v) for k, v in updates.items() if k in allowed]
+        if not fields:
+            return self.get_download_job(job_id)
+        with self._lock:
+            set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
+            values = [v for _, v in fields] + [str(job_id)]
+            self._conn.execute(
+                f"UPDATE download_jobs SET {set_clause}, updated_at = datetime('now') WHERE job_id = ?",
+                tuple(values)
+            )
+            return self.get_download_job(str(job_id))
+
+    def fail_download_job(self, job_id: str, error: str) -> Optional[Dict]:
+        return self.complete_download_job(job_id, {"status": "FAILED", "error": str(error)[:1000]})
+
+    def get_download_job(self, job_id: str) -> Optional[Dict]:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM download_jobs WHERE job_id = ?", (str(job_id),)).fetchone()
+            return dict(row) if row else None
+
     def set_active_video(self, user_id: str, video_id: str, path: str, sha256: str, bytes: int) -> Dict:
         with self._lock:
             cur = self._conn.cursor()
@@ -327,9 +411,9 @@ class SQLiteRepository(PersistenceRepository):
                 cur.execute("SELECT 1")
                 cur.fetchone()
                 # Check tables exist
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('operation_logs','video_versions','active_videos','publications')")
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('operation_logs','video_versions','active_videos','publications','download_jobs')")
                 tables = cur.fetchall()
-                return len(tables) == 4
+                return len(tables) == 5
         except Exception:
             return False
 
