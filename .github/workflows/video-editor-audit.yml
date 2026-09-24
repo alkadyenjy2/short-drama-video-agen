@@ -22,3 +22,5 @@ jobs:
         run: python -m py_compile bot.py health.py video_editor.py persistence/repository.py
       - name: Run editor audit
         run: python -m unittest test_video_editor_audit.py -v
+      - name: Run runtime pipeline audit
+        run: python -m unittest test_runtime_pipeline_audit.py -v
