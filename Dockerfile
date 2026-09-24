@@ -9,6 +9,8 @@ WORKDIR /app
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
+    ffmpeg \
+    fonts-freefont-ttf \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies - deterministic from requirements.txt
