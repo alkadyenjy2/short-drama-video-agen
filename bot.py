@@ -124,6 +124,26 @@ async def handle_video_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_edit_comment(update, context)
         return
 
+    worker_enabled = os.getenv("YOUTUBE_WORKER_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+    worker_token = os.getenv("YOUTUBE_WORKER_TOKEN", "").strip()
+    if worker_enabled and worker_token:
+        from persistence.repository import get_repository
+        from uuid import uuid4
+        repo = get_repository()
+        repo.init_schema()
+        user_id = str(update.effective_user.id if update.effective_user else message.chat_id)
+        job_id = uuid4().hex
+        repo.enqueue_download_job({
+            "job_id": job_id,
+            "user_id": user_id,
+            "url": url,
+        })
+        await message.reply_text(
+            "⏳ لقيت رابط YouTube. حطيته في طابور Browser Worker الآمن لأن YouTube رفض تنزيل Railway مباشرة.\\n"
+            "الـWorker هيستخدم جلسة المتصفح المحلية + yt-dlp/EJS، وبعد التحقق هسجله كـ active video تلقائياً."
+        )
+        return
+
     await message.reply_text("⏳ لقيت رابط YouTube. بنزّل الفيديو محلياً أولاً، وبعد التحقق هسجله كـ active video.")
     try:
         upload_dir = os.getenv("VIDEO_UPLOAD_DIR", "./data/uploads")
