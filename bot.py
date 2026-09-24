@@ -218,7 +218,9 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not idea:
         await update.message.reply_text("💾 استخدم: /save <الفكرة>")
         return
-    path = "saved_ideas.json"
+    data_dir = os.getenv("DATA_DIR", "./data")
+    os.makedirs(data_dir, exist_ok=True)
+    path = os.path.join(data_dir, "saved_ideas.json")
     data = []
     if os.path.exists(path):
         try:
@@ -408,7 +410,14 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     await video.download_to_drive(path)
     digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
     size = os.path.getsize(path)
+    user_id = str(update.effective_user.id if update.effective_user else message.chat_id)
+    video_id = str(message.video.file_unique_id)
+    from persistence.repository import get_repository
+    repo = get_repository()
+    repo.init_schema()
+    repo.set_active_video(user_id, video_id, path, digest, size)
     context.user_data["active_video"] = path
+    context.user_data["active_video_id"] = video_id
     context.user_data["active_video_sha256"] = digest
     context.user_data["active_video_bytes"] = size
     await message.reply_text(
@@ -434,7 +443,26 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
+    from persistence.repository import get_repository
+    repo = get_repository()
+    repo.init_schema()
+    user_id = str(update.effective_user.id if update.effective_user else update.message.chat_id)
+
     active_video = context.user_data.get("active_video")
+    active_sha = context.user_data.get("active_video_sha256")
+    active_video_id = context.user_data.get("active_video_id")
+
+    if not active_video or not os.path.isfile(active_video):
+        persisted = repo.get_active_video(user_id)
+        if persisted and os.path.isfile(persisted["path"]):
+            active_video = persisted["path"]
+            active_sha = persisted["sha256"]
+            active_video_id = persisted["video_id"]
+            context.user_data["active_video"] = active_video
+            context.user_data["active_video_sha256"] = active_sha
+            context.user_data["active_video_id"] = active_video_id
+            context.user_data["active_video_bytes"] = persisted["bytes"]
+
     if not active_video or not os.path.isfile(active_video):
         await update.message.reply_text(
             "🛑 EDIT_REQUEST مفهوم، لكن لا يوجد active video للتنفيذ. ابعت الفيديو أولاً."
@@ -442,7 +470,6 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     from video_editor import edit_video
-    from persistence.repository import get_repository
     from datetime import datetime, timezone
     from uuid import uuid4
 
@@ -460,12 +487,10 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
 
-        parent_version = context.user_data.get("active_video_sha256")
+        parent_version = active_sha or context.user_data.get("active_video_sha256")
         new_version = result.artifact_sha256
         try:
-            repo = get_repository()
-            repo.init_schema()
-            video_id = context.user_data.get("active_video_id", update.effective_user.id if update.effective_user else "telegram")
+            video_id = active_video_id or context.user_data.get("active_video_id", update.effective_user.id if update.effective_user else "telegram")
             repo.create_or_update_video_version(str(video_id), new_version)
             repo.create_operation_log({
                 "operation_id": uuid4().hex,
@@ -484,9 +509,20 @@ async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(f"🛑 Artifact موجود لكن persistence verification failed: {exc}")
             return
 
+        repo.set_active_video(
+            user_id,
+            str(video_id),
+            result.output_path,
+            result.artifact_sha256,
+            result.artifact_bytes,
+        )
+        active_video = result.output_path
+        active_sha = result.artifact_sha256
+        active_video_id = str(video_id)
         context.user_data["active_video"] = result.output_path
         context.user_data["active_video_sha256"] = result.artifact_sha256
         context.user_data["active_video_bytes"] = result.artifact_bytes
+        context.user_data["active_video_id"] = str(video_id)
 
     await update.message.reply_video(
         video=open(last_result.output_path, "rb"),
