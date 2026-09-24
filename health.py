@@ -116,7 +116,7 @@ def start_health_server(repository_getter, host="0.0.0.0", port=8000,
 
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > 200 * 1024 * 1024:
+                    if length <= 0 or length > 250 * 1024 * 1024:
                         self._json(413, {"ok": False, "error": "VIDEO_TOO_LARGE"})
                         return
                     upload_dir = os.getenv("VIDEO_UPLOAD_DIR", "./data/uploads")
