@@ -28,8 +28,8 @@ BROWSER = os.getenv("YTDLP_BROWSER", "firefox").strip()
 DENO_PATH = os.getenv("YTDLP_DENO_PATH", r"C:\Users\LTC\AppData\Local\Deno\deno.exe").strip()
 OUTPUT_DIR = Path(os.getenv("YTDLP_OUTPUT_DIR", r"C:\Users\LTC\Downloads\short-drama-browser-worker"))
 POLL_SECONDS = max(2, int(os.getenv("YTDLP_POLL_SECONDS", "5")))
-MAX_BYTES = 200 * 1024 * 1024
-MAX_SECONDS = 600
+MAX_BYTES = 250 * 1024 * 1024
+MAX_SECONDS = 3600
 
 
 def _json_request(url, method="GET", payload=None):
