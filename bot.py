@@ -1,5 +1,6 @@
 # bot.py - Short Drama Video Agent with Trend Scanner + Edit Understanding
 import asyncio, hashlib, json, os, re, unicodedata
+from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -74,6 +75,82 @@ def _extract_seconds(text: str):
 def _extract_caption(text: str):
     match = re.search(r"(?:الكابشن|كابشن|العنوان|عنوان)\s*(?:(?:لـ|ل|إلى|الى)\s*)?(?::|=)?\s*(.+)$", text)
     return match.group(1).strip() if match else None
+
+
+def _extract_supported_url(text: str):
+    """Return a supported public video URL, or None."""
+    match = re.search(r"https?://\\S+", text or "")
+    if not match:
+        return None
+    url = match.group(0).rstrip(".,!?)]}")
+    host = (urlparse(url).hostname or "").lower()
+    if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"}:
+        return url
+    return None
+
+
+def _download_youtube_video(url: str, output_dir: str):
+    """Download a public YouTube video to a bounded local artifact."""
+    import yt_dlp
+    os.makedirs(output_dir, exist_ok=True)
+    output_template = os.path.join(output_dir, "%(id)s.%(ext)s")
+    options = {
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+        "outtmpl": output_template,
+        "merge_output_format": "mp4",
+        "noplaylist": True,
+        "max_filesize": 200 * 1024 * 1024,
+        "match_filter": yt_dlp.utils.match_filter_func("duration <= 600"),
+        "quiet": True,
+        "no_warnings": True,
+        "restrictfilenames": True,
+    }
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=True)
+        path = ydl.prepare_filename(info)
+        if not os.path.isfile(path):
+            mp4 = os.path.splitext(path)[0] + ".mp4"
+            if os.path.isfile(mp4):
+                path = mp4
+        if not os.path.isfile(path) or os.path.getsize(path) <= 0:
+            raise RuntimeError("downloaded video artifact is missing or empty")
+        return path, info
+
+
+async def handle_video_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    url = _extract_supported_url(message.text if message else "")
+    if not url:
+        await handle_edit_comment(update, context)
+        return
+
+    await message.reply_text("⏳ لقيت رابط YouTube. بنزّل الفيديو محلياً أولاً، وبعد التحقق هسجله كـ active video.")
+    try:
+        upload_dir = os.getenv("VIDEO_UPLOAD_DIR", "./data/uploads")
+        path, info = await asyncio.to_thread(_download_youtube_video, url, upload_dir)
+        digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        size = os.path.getsize(path)
+        user_id = str(update.effective_user.id if update.effective_user else message.chat_id)
+        video_id = str(info.get("id") or os.path.splitext(os.path.basename(path))[0])
+        from persistence.repository import get_repository
+        repo = get_repository()
+        repo.init_schema()
+        repo.set_active_video(user_id, video_id, path, digest, size)
+        context.user_data["active_video"] = path
+        context.user_data["active_video_id"] = video_id
+        context.user_data["active_video_sha256"] = digest
+        context.user_data["active_video_bytes"] = size
+        title = str(info.get("title") or "YouTube video")[:120]
+        await message.reply_text(
+            f"✅ الفيديو اتجاب واتحقق واتسجل كـ active video.\\nTitle: {title}\\n"
+            f"Bytes: {size}\\nSHA256: {digest}\\n\\n"
+            "دلوقتي ابعت التعديل المطلوب، مثل: خلي الإضاءة أغمق"
+        )
+    except Exception as exc:
+        await message.reply_text(
+            "🛑 مقدرتش أجيب الفيديو من الرابط، لذلك لم أسجل active video ولم أدّعِ نجاحاً.\\n"
+            f"Reason: {str(exc)[:500]}"
+        )
 
 
 def parse_edit_comment(text: str):
@@ -427,6 +504,10 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    url = _extract_supported_url(text)
+    if url:
+        await handle_video_url(update, context)
+        return
     if context.user_data.pop("awaiting_story", False):
         context.user_data["story_input"] = text
         await update.message.reply_text("✅ استلمت القصة. تم حفظ الإدخال داخل جلسة Telegram؛ لا يوجد ادعاء بتحليل أو توليد قبل تشغيل المحرك المناسب.")
