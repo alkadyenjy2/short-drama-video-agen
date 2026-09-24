@@ -13,6 +13,15 @@ import urllib.request
 import yt_dlp
 
 
+_LOCAL_ENV = Path(__file__).with_name(".env")
+if _LOCAL_ENV.is_file():
+    for _line in _LOCAL_ENV.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _value = _line.split("=", 1)
+            os.environ.setdefault(_key.strip(), _value.strip().strip('"').strip("'"))
+
+
 AGENT_URL = os.getenv("VIDEO_AGENT_URL", "https://short-drama-video-agen-production.up.railway.app").rstrip("/")
 WORKER_TOKEN = os.getenv("YOUTUBE_WORKER_TOKEN", "").strip()
 BROWSER = os.getenv("YTDLP_BROWSER", "firefox").strip()
