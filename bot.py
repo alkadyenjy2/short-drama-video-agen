@@ -100,7 +100,7 @@ def _download_youtube_video(url: str, output_dir: str):
         "merge_output_format": "mp4",
         "noplaylist": True,
         "max_filesize": 200 * 1024 * 1024,
-        "match_filter": yt_dlp.utils.match_filter_func("duration <= 600"),
+        "match_filter": yt_dlp.utils.match_filter_func("duration <= 3600"),
         "quiet": True,
         "no_warnings": True,
         "restrictfilenames": True,
