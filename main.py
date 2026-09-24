@@ -58,12 +58,41 @@ async def main():
         )
         future.result(timeout=30)
 
+    worker_token = os.getenv("YOUTUBE_WORKER_TOKEN", "").strip()
+
+    def worker_complete_handler(job, final_path):
+        text = (
+            "✅ الفيديو اتجاب من Browser Worker واتحقق واتسجل كـ active video.\\n"
+            f"Title: {(job.get('title') or 'YouTube video')[:120]}\\n"
+            f"Bytes: {job.get('bytes')}\\nSHA256: {job.get('sha256')}\\n\\n"
+            "دلوقتي ابعت التعديل المطلوب، مثل: خلي الإضاءة أغمق"
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            application.bot.send_message(chat_id=int(job["user_id"]), text=text),
+            loop,
+        )
+        future.result(timeout=30)
+
+    def worker_fail_handler(job, error):
+        text = (
+            "🛑 Browser Worker مقدرش يجيب الفيديو؛ لم يتم تسجيل active video ولم أدّعِ نجاحاً.\\n"
+            f"Reason: {str(error)[:500]}"
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            application.bot.send_message(chat_id=int(job["user_id"]), text=text),
+            loop,
+        )
+        future.result(timeout=30)
+
     health_server, _health_thread = start_health_server(
         lambda: repo,
         host=host,
         port=port,
         telegram_handler=receive_telegram_update,
         telegram_path=path,
+        worker_token=worker_token,
+        worker_complete_handler=worker_complete_handler,
+        worker_fail_handler=worker_fail_handler,
     )
     print(f"Health endpoint: http://{host}:{port}/health")
 
