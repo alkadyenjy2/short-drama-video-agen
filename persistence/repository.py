@@ -327,9 +327,9 @@ class SQLiteRepository(PersistenceRepository):
                 cur.execute("SELECT 1")
                 cur.fetchone()
                 # Check tables exist
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('operation_logs','video_versions','publications')")
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('operation_logs','video_versions','active_videos','publications')")
                 tables = cur.fetchall()
-                return len(tables) == 3
+                return len(tables) == 4
         except Exception:
             return False
 
