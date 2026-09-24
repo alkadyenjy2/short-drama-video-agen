@@ -95,7 +95,7 @@ def _download(job):
         "max_filesize": MAX_BYTES,
         "match_filter": yt_dlp.utils.match_filter_func(f"duration <= {MAX_SECONDS}"),
         "cookiesfrombrowser": (BROWSER,),
-        "js_runtimes": {"deno": DENO_PATH},
+        "js_runtimes": {"deno": {"path": DENO_PATH}},
         "quiet": True,
         "no_warnings": False,
         "restrictfilenames": True,
