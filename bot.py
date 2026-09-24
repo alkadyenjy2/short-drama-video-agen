@@ -72,7 +72,7 @@ def _extract_seconds(text: str):
 
 
 def _extract_caption(text: str):
-    match = re.search(r"(?:الكابشن|كابشن|العنوان|عنوان)\s*(?:لـ|ل|:|=)?\s*(.+)$", text)
+    match = re.search(r"(?:الكابشن|كابشن|العنوان|عنوان)\s*(?:(?:لـ|ل|إلى|الى)\s*)?(?::|=)?\s*(.+)$", text)
     return match.group(1).strip() if match else None
 
 
@@ -239,7 +239,7 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🧠 **تحليل القصة**\\n\\nTitle: {}\\nGenre: {}\\nBeats: {}\\nProfit score: {}/10\\nViews estimate: {}\\nRights: {}\\n\\nالتحليل مبني على البيانات الموجودة في trending_stories.json.".format(story.get("title"), story.get("genre"), story.get("beats"), story.get("profit_score"), story.get("views_estimate"), story.get("rights_compliant")), parse_mode="Markdown")
 
 async def execute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⚙️ **Execution status**\\n\\nGeneration: موصول بمحرك Hugging Face ويتطلب HF_TOKEN صالحاً.\\nPublishing: موصول بالكود مع Evidence Gate، لكن حسابات المنصات غير متصلة.\\nEditing: parser موصول، محرك إعادة التوليد/التعديل غير موصول.\\nلا يوجد تنفيذ وهمي أو PUBLISHED وهمي.", parse_mode="Markdown")
+    await update.message.reply_text("⚙️ **Execution status**\\n\\nGeneration: موصول بمحرك Hugging Face ويتطلب HF_TOKEN صالحاً.\\nPublishing: موصول بالكود مع Evidence Gate، لكن حسابات المنصات غير متصلة.\\nEditing: parser + deterministic FFmpeg editor موصولان؛ Evidence Gate يمنع النجاح الوهمي.\\nلا يوجد تنفيذ وهمي أو PUBLISHED وهمي.", parse_mode="Markdown")
 
 async def handle_send_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; await query.answer()
