@@ -152,7 +152,10 @@ def start_health_server(repository_getter, host="0.0.0.0", port=8000,
                         "error": None,
                     })
                     if worker_complete_handler:
-                        worker_complete_handler(updated, final_path)
+                        try:
+                            worker_complete_handler(updated, final_path)
+                        except Exception as notify_exc:
+                            print(f"Worker completion notification warning: {notify_exc}")
                     self._json(200, {
                         "ok": True,
                         "status": "COMPLETE",
