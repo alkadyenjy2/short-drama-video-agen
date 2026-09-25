@@ -56,7 +56,12 @@ async def main():
         future = asyncio.run_coroutine_threadsafe(
             application.process_update(update), loop
         )
-        future.result(timeout=30)
+        def _report_update_error(done):
+            try:
+                done.result()
+            except Exception as exc:
+                print(f"Telegram update processing error: {exc}")
+        future.add_done_callback(_report_update_error)
 
     worker_token = os.getenv("YOUTUBE_WORKER_TOKEN", "").strip()
 
