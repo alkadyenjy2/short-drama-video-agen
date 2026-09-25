@@ -3,6 +3,7 @@ import asyncio, hashlib, json, os, re, unicodedata
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from production_bot_handlers import handle_generate_real, handle_text_real
 
 # Load trending stories
 with open("trending_stories.json", "r", encoding="utf-8") as f:
@@ -53,7 +54,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(handle_edit_story, pattern=r"^edit_story$"))
     application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(approve_beat_|edit_beat_|reject_beat_)"))
     application.add_handler(MessageHandler(filters.VIDEO, handle_video_upload))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_comment))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_real))
 
     return application
 
