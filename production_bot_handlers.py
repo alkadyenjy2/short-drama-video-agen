@@ -10,17 +10,27 @@ from hf_gradio_video_generation import generate_story_video
 
 
 async def _send_verified_video(message, user_id, story_text, parsed_value="story_input"):
-    import bot
+    from persistence.repository import get_repository
 
     artifact = await asyncio.to_thread(generate_story_video, story_text)
     video_id = f"vid_{artifact.sha256[:12]}"
-    log = bot.create_operation_log(
-        user_id=str(user_id),
-        video_id=video_id,
-        operation_type="generation",
-        parsed_value=parsed_value,
-        generated_prompt=story_text,
-    )
+    repo = get_repository()
+    repo.init_schema()
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    log = repo.create_operation_log({
+        "operation_id": uuid4().hex,
+        "user_id": str(user_id),
+        "video_id": video_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "parent_version": None,
+        "new_version": artifact.sha256,
+        "operation_type": "generation",
+        "parsed_value": parsed_value,
+        "generated_prompt": story_text,
+        "preview_reference": artifact.local_path,
+        "status": "GENERATED",
+    })
     try:
         with open(artifact.local_path, "rb") as fh:
             await message.reply_video(
