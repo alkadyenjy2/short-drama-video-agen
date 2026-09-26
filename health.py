@@ -8,6 +8,7 @@ import json
 import os
 import hashlib
 import threading
+from video_editor import editor_status
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
@@ -32,6 +33,10 @@ def start_health_server(repository_getter, host="0.0.0.0", port=8000,
             return bool(configured) and self.headers.get("X-Worker-Token", "") == configured
 
         def do_GET(self):
+            if self.path == "/editor/status":
+                self._json(200, editor_status())
+                return
+
             if self.path.startswith("/worker/jobs"):
                 if not self._authorized_worker():
                     self._json(401, {"ok": False, "error": "WORKER_UNAUTHORIZED"})
@@ -63,6 +68,7 @@ def start_health_server(repository_getter, host="0.0.0.0", port=8000,
                         "persistence": "ok",
                         "version": "v1.3",
                         "telegram_transport": "webhook",
+                        "editor": editor_status(),
                     })
                 else:
                     self._json(503, {
