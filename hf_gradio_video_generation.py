@@ -128,18 +128,12 @@ def generate_story_video(
         "Preserve the protagonist and scene. Subtle cinematic camera movement, "
         "natural acting, suspenseful motion, no text, no logos. Story beat: " + story_text[:1200]
     )
-    video_input = {
-        "path": image_url,
-        "url": image_url,
-        "orig_name": "story_keyframe.webp",
-        "mime_type": "image/webp",
-        "is_stream": False,
-        "meta": {"_type": "gradio.FileData"},
-    }
+    # Gradio's public File input accepts the generated image URL directly.
+    # Using a FileData dict here caused the Railway runtime call to stall.
     video_result = _call_gradio(
         video_space,
         "generate-video",
-        [video_input, video_prompt, 896, 512,         "Bright tones, overexposed, static, blurred details, subtitles, watermark, text, signature",
+        [image_url, video_prompt, 512, 896,         "Bright tones, overexposed, static, blurred details, subtitles, watermark, text, signature",
          2.0, 1.0, 4, 42, True],
         timeout=timeout,
     )
