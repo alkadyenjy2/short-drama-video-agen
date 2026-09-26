@@ -31,8 +31,8 @@
 2. Audit Meta → Done PASS
 3. Meta patch → Done P0.3 hardened
 4. Tests → Done PASS
-5. TikTok audit → TODO - implement TikTokPublisher real flow: INIT_URL https://open.tiktokapis.com/v2/post/publish/video/init/ + chunked 5-64MB + STATUS_URL polling → video_id, error taxonomy, evidence record (can be done without real creds, blocked same as Meta)
-6. YouTube audit → TODO - implement YouTubePublisher resumable: POST /upload/youtube/v3/videos?uploadType=resumable → Location → PUT chunks → videoId, quota handling, forced PRIVATE note
+5. TikTok audit → Done PASS - flow markers + blocked-credential Evidence Gate verified
+6. YouTube audit → Done PASS - resumable init + Location + PUT/Content-Range + videoId receipt gate + quota/error markers verified against official Google API flow; real OAuth remains blocked
 7. Deployment → TODO - Dockerfile + railway.toml ready, needs Railway connector + env vars set in platform (not chat)
 8. E2E verification → TODO - after human provides creds in platform env, run real publish with SELF_ONLY privacy to verify receipt
 9. Documentation → TODO - update DEPLOYMENT.md with real flow
