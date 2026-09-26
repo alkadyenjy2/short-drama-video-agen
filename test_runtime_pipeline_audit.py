@@ -107,6 +107,7 @@ class RuntimePipelineAudit(unittest.TestCase):
             self.assertEqual(repo.get_active_video("audit-user")["sha256"], result.artifact_sha256)
             self.assertEqual(repo.get_video_version("audit-video")["current_version"], result.artifact_sha256)
             self.assertEqual(repo.get_operation_log("audit-operation")["status"], "EDITED")
+            repo.close()
 
 
 if __name__ == "__main__":

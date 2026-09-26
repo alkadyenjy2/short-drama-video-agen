@@ -404,6 +404,12 @@ class SQLiteRepository(PersistenceRepository):
         with self._lock:
             self._conn.execute("DELETE FROM active_videos WHERE user_id = ?", (str(user_id),))
 
+    def close(self) -> None:
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+
     def health_check(self) -> bool:
         try:
             with self._lock:
