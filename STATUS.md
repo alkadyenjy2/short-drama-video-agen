@@ -67,3 +67,12 @@ alkadyenjy2/
 ├── ze-outsourcing
 └── enjY-ai-coo
 ```
+
+## VERIFIED RUNTIME UPDATE (2026-09-27)
+- [VERIFIED] Railway production deployment `e41bcade-f1c5-4ca3-9340-5d60ce204782` is SUCCESS on commit `500a2ca9fe0ea725877ce0276f1fac5679e70246`.
+- [VERIFIED] Production `/health` = HTTP 200; persistence=ok; editor.ready=true; FFmpeg=/usr/bin/ffmpeg; FreeSans available.
+- [VERIFIED] Production `/editor/status` = HTTP 200 with editor.ready=true.
+- [VERIFIED] Local audit suite: video editor 19/19, runtime pipeline 1/1, Meta audit PASS, TikTok audit PASS; process exit 0.
+- [VERIFIED] Telegram behavioral E2E: video was registered as active video with 65,419 bytes and SHA256 `9f1822b3345180708412829e5aab2739aea82b7896562c32c56d13c2bdc51b6c`; command `خلي الإضاءة أغمق` produced `EDITED`, operation=lighting, 39,501 bytes, SHA256 `eb84e4b933fb9bf0ed5e46384ed6df29c2159b6abc8c270686ab6355cbc80d18`.
+- [BLOCKED] I2V provider generation remains credential/quota blocked: Railway production has no `HF_TOKEN` variable; public ZeroGPU route previously returned quota exhaustion. No I2V success is claimed.
+- [IMPORTANT] `railway-src/main` is the production canonical repo and is unrelated in Git history to `origin/main` (`alkadyenjy2/alkadyenjy2-short-drama-video-agent`). Do not merge or force-push between them without an explicit migration plan.
