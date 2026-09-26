@@ -53,7 +53,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(earnings_callback, pattern=r"^my_earnings$"))
     application.add_handler(CallbackQueryHandler(handle_edit_story, pattern=r"^edit_story$"))
     application.add_handler(CallbackQueryHandler(show_not_implemented, pattern=r"^(approve_beat_|edit_beat_|reject_beat_)"))
-    application.add_handler(MessageHandler(filters.VIDEO, handle_video_upload))
+    application.add_handler(MessageHandler(filters.VIDEO | filters.ANIMATION | filters.Document.VIDEO, handle_video_upload))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_real))
 
     return application
@@ -499,17 +499,34 @@ async def handle_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    if not message or not message.video:
+    if not message:
         return
-    video = await message.video.get_file()
+
+    media = None
+    media_kind = None
+    if message.video:
+        media = message.video
+        media_kind = "video"
+    elif message.animation:
+        media = message.animation
+        media_kind = "animation"
+    elif message.document and (message.document.mime_type or "").lower().startswith("video/"):
+        media = message.document
+        media_kind = "document"
+    else:
+        return
+
+    media_file = await media.get_file()
     upload_dir = os.getenv("VIDEO_UPLOAD_DIR", "./data/uploads")
     os.makedirs(upload_dir, exist_ok=True)
-    path = os.path.join(upload_dir, f"{message.video.file_unique_id}.mp4")
-    await video.download_to_drive(path)
-    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    file_unique_id = str(media.file_unique_id)
+    path = os.path.join(upload_dir, f"{file_unique_id}.mp4")
+    await media_file.download_to_drive(path)
+    with open(path, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
     size = os.path.getsize(path)
     user_id = str(update.effective_user.id if update.effective_user else message.chat_id)
-    video_id = str(message.video.file_unique_id)
+    video_id = file_unique_id
     from persistence.repository import get_repository
     repo = get_repository()
     repo.init_schema()
@@ -519,9 +536,10 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["active_video_sha256"] = digest
     context.user_data["active_video_bytes"] = size
     await message.reply_text(
-        f"🎬 الفيديو اتسجل كـ active video.\\nBytes: {size}\\nSHA256: {digest}\\n\\n"
+        f"🎬 الفيديو اتسجل كـ active video ({media_kind}).\nBytes: {size}\nSHA256: {digest}\n\n"
         "ابعت التعديل المطلوب، مثل: خلي الإضاءة أغمق"
     )
+
 
 async def handle_edit_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
