@@ -47,7 +47,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("execute", execute_command))
     application.add_handler(CallbackQueryHandler(show_trending, pattern=r"^show_trending$"))
     application.add_handler(CallbackQueryHandler(handle_selection, pattern=r"^select_"))
-    application.add_handler(CallbackQueryHandler(handle_generate, pattern=r"^generate_"))
+    application.add_handler(CallbackQueryHandler(handle_generate_real, pattern=r"^generate_"))
     application.add_handler(CallbackQueryHandler(start_from_callback, pattern=r"^back_home$"))
     application.add_handler(CallbackQueryHandler(handle_send_story, pattern=r"^send_story$"))
     application.add_handler(CallbackQueryHandler(earnings_callback, pattern=r"^my_earnings$"))
