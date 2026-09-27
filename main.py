@@ -130,7 +130,14 @@ async def main():
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     try:
-        await application.initialize()
+        try:
+            await application.initialize()
+        except Exception as exc:
+            # Never expose Telegram credentials through startup logs.
+            if exc.__class__.__name__ == "InvalidToken":
+                print("Telegram initialization failed: token rejected by Telegram (credential redacted)")
+                raise RuntimeError("Telegram initialization failed: invalid token") from None
+            raise
         await application.bot.set_webhook(
             url=telegram_url,
             allowed_updates=Update.ALL_TYPES,
