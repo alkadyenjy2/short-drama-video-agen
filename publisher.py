@@ -401,3 +401,7 @@ def get_adapter_status():
     tk_ok, tk_reason, tk_cat = tiktok._check_credentials()
     yt_ok, yt_reason, yt_cat = youtube._check_credentials()
     return {'tiktok': {'ready': True, 'blocked': not tk_ok, 'reason': tk_reason, 'category': tk_cat, 'evidence_gate': 'ENFORCED', 'flow': 'INIT_URL -> STATUS_URL polling -> video_id'}, 'youtube': {'ready': True, 'blocked': not yt_ok, 'reason': yt_reason, 'category': yt_cat, 'evidence_gate': 'ENFORCED', 'flow': 'resumable init -> PUT chunks -> videoId'}, 'instagram': {'ready': True, 'blocked': not ig_ok, 'reason': ig_reason, 'category': ig_cat, 'graph_version': meta_ig.graph_version, 'evidence_gate': 'ENFORCED'}, 'facebook': {'ready': True, 'blocked': not fb_ok, 'reason': fb_reason, 'category': fb_cat, 'evidence_gate': 'ENFORCED'}}
+
+# Live TikTok Direct Post override: keeps the existing adapter interface and Evidence Gate.
+from tiktok_direct_post import TikTokPublisher as _LiveTikTokPublisher
+TikTokPublisher = _LiveTikTokPublisher
