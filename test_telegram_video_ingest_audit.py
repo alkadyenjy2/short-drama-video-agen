@@ -45,7 +45,8 @@ class VideoIngestAudit(unittest.IsolatedAsyncioTestCase):
             self.assertIn('document',msg.replies[0])
 
     def test_handler_registration_covers_video_animation_document(self):
-        source=open('bot.py',encoding='utf-8').read()
+        with open('bot.py',encoding='utf-8') as f:
+            source=f.read()
         self.assertIn('filters.VIDEO | filters.ANIMATION | filters.Document.VIDEO',source)
         self.assertIn('message.animation',source)
         self.assertIn('message.document',source)
